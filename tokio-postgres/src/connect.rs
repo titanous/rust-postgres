@@ -40,15 +40,6 @@ where
         return Err(Error::config("invalid number of ports".into()));
     }
 
-    if !config.hostaddr.is_empty() && config.hostaddr.len() != config.host.len() {
-        let msg = format!(
-            "invalid number of hostaddrs ({}). Possible values: 0 or number of hosts ({})",
-            config.hostaddr.len(),
-            config.host.len(),
-        );
-        return Err(Error::config(msg.into()));
-    }
-
     let mut error = None;
     for i in 0..num_hosts {
         let host = config.host.get(i);
@@ -61,28 +52,30 @@ where
             .unwrap_or(5432);
 
         // The value of host is always used as the hostname for TLS validation.
+        // postgres doesn't support TLS over unix sockets, so the choice for Host::Unix variant here doesn't matter
         let hostname = match host {
-            Some(Host::Tcp(host)) => host.clone(),
-            // postgres doesn't support TLS over unix sockets, so the choice here doesn't matter
-            #[cfg(unix)]
-            Some(Host::Unix(_)) => "".to_string(),
-            None => hostaddr.map_or("".to_string(), |ipaddr| ipaddr.to_string()),
+            Some(Host::Tcp(host)) => host.as_str(),
+            _ => "",
         };
         let tls = tls
             .make_tls_connect(&hostname)
             .map_err(|e| Error::tls(e.into()))?;
 
-        // If both host and hostaddr are specified, the value of hostaddr is used to to establish the TCP connection.
-        let hostaddr = match host {
-            Host::Tcp(_hostname) => match config.hostaddr.get(i) {
-                Some(hostaddr) if hostaddr.is_empty() => Host::Tcp(hostaddr.clone()),
-                _ => host.clone(),
-            },
-            #[cfg(unix)]
-            Host::Unix(_v) => host.clone(),
+        // Try to use the value of hostaddr to establish the TCP connection,
+        // fallback to host if hostaddr is not present.
+        let addr = match hostaddr {
+            Some(ipaddr) => Host::Tcp(ipaddr.to_string()),
+            None => {
+                if let Some(host) = host {
+                    host.clone()
+                } else {
+                    // This is unreachable.
+                    return Err(Error::config("both host and hostaddr are empty".into()));
+                }
+            }
         };
 
-        match connect_once(&hostaddr, port, tls, config).await {
+        match connect_once(&addr, port, tls, config).await {
             Ok((client, connection)) => return Ok((client, connection)),
             Err(e) => error = Some(e),
         }
