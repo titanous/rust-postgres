@@ -355,6 +355,7 @@ enum Kind {
     #[cfg(feature = "runtime")]
     Connect,
     Timeout,
+    External,
 }
 
 struct ErrorInner {
@@ -394,6 +395,7 @@ impl fmt::Display for Error {
             #[cfg(feature = "runtime")]
             Kind::Connect => fmt.write_str("error connecting to server")?,
             Kind::Timeout => fmt.write_str("timeout waiting for server")?,
+            Kind::External => fmt.write_str("error in external crate")?,
         };
         if let Some(ref cause) = self.0.cause {
             write!(fmt, ": {}", cause)?;
@@ -435,6 +437,14 @@ impl Error {
 
     fn new(kind: Kind, cause: Option<Box<dyn error::Error + Sync + Send>>) -> Error {
         Error(Box::new(ErrorInner { kind, cause }))
+    }
+
+    /// Creates a new error from another crate, for use in connection wrappers.
+    pub fn new_external(cause: Box<dyn error::Error + Sync + Send>) -> Error {
+        Error(Box::new(ErrorInner {
+            kind: Kind::External,
+            cause: Some(cause),
+        }))
     }
 
     pub(crate) fn closed() -> Error {
