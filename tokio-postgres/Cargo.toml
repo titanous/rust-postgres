@@ -58,6 +58,7 @@ postgres-types = { version = "0.2.4", path = "../postgres-types" }
 socket2 = { version = "0.5", features = ["all"] }
 tokio = { version = "1.27", features = ["io-util"] }
 tokio-util = { version = "0.7", features = ["codec"] }
+rand = "0.8.5"
 
 [dev-dependencies]
 futures-executor = "0.3"
