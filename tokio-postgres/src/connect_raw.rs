@@ -18,8 +18,10 @@ use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::codec::Framed;
+use tracing::Span;
 
 pub struct StartupStream<S, T> {
     inner: Framed<MaybeTlsStream<S, T>, PostgresCodec>,
@@ -97,6 +99,7 @@ where
         delayed: VecDeque::new(),
     };
 
+    let start_time = Instant::now();
     let user = config
         .user
         .as_deref()
@@ -105,6 +108,10 @@ where
     startup(&mut stream, config, &user).await?;
     authenticate(&mut stream, config, &user).await?;
     let (process_id, secret_key, parameters) = read_info(&mut stream).await?;
+    Span::current().record(
+        "db.connect.timing.auth_ns",
+        start_time.elapsed().as_nanos() as u64,
+    );
 
     let (sender, receiver) = mpsc::unbounded();
     let client = Client::new(sender, config.ssl_mode, process_id, secret_key, config);
